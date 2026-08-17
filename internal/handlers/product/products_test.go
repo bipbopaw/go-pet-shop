@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/go-chi/chi"
+	mock "github.com/stretchr/testify/mock"
 )
 
 // withURLParam добавляет URL параметр в контекст запроса
@@ -24,20 +25,17 @@ func withURLParam(r *http.Request, key, value string) *http.Request {
 // Get Product - Ready
 func TestGetAllProducts_Success(t *testing.T) {
 	// Мокаем storage — он вернёт один продукт.
-	mock := &ProductsMock{
-		GetAllProductsFunc: func(ctx context.Context) ([]models.Product, error) {
-			return []models.Product{
-				{ID: 1, Name: "Dog Food"},
-			}, nil
-		},
-	}
+	m := NewMockProducts(t)
+	m.On("GetAllProducts", context.Background()).Return([]models.Product{
+		{ID: 1, Name: "Dog Food"},
+	}, nil)
 
 	// Создаем HTTP-запрос GET /products
 	req := httptest.NewRequest(http.MethodGet, "/products", nil)
 	w := httptest.NewRecorder()
 
 	// Создаем хендлер с мок-хранилищем
-	handler := New(slog.Default(), mock)
+	handler := New(slog.Default(), m)
 
 	// Вызываем метод GetAllProducts, который является http.HandlerFunc
 	handler.GetAllProducts(w, req)
@@ -49,17 +47,14 @@ func TestGetAllProducts_Success(t *testing.T) {
 }
 func TestGetAllProducts_Error(t *testing.T) {
 	// Мокаем storage — он будет возвращать ошибку
-	mock := &ProductsMock{
-		GetAllProductsFunc: func(ctx context.Context) ([]models.Product, error) {
-			return nil, errors.New("DB error")
-		},
-	}
+	m := NewMockProducts(t)
+	m.On("GetAllProducts", context.Background()).Return(nil, errors.New("DB error"))
 
 	// Создаем запрос
 	req := httptest.NewRequest(http.MethodGet, "/products", nil)
 	w := httptest.NewRecorder()
 
-	handler := New(slog.Default(), mock)
+	handler := New(slog.Default(), m)
 	handler.GetAllProducts(w, req)
 
 	// Ожидаем HTTP 500
@@ -73,17 +68,14 @@ func TestGetAllProducts_Error(t *testing.T) {
 // =======================
 
 func TestCreateProduct_Success(t *testing.T) {
-	mock := &ProductsMock{
-		CreateProductFunc: func(ctx context.Context, product models.Product) (int, error) {
-			return 42, nil
-		},
-	}
+	m := NewMockProducts(t)
+	m.On("CreateProduct", context.Background(), models.Product{Name: "Cat Food", Price: 10.5, Stock: 5}).Return(42, nil)
 
 	body := bytes.NewBufferString(`{"name":"Cat Food","price":10.5,"stock":5}`)
 	req := httptest.NewRequest(http.MethodPost, "/products", body)
 	w := httptest.NewRecorder()
 
-	handler := New(slog.Default(), mock)
+	handler := New(slog.Default(), m)
 	handler.CreateProduct(w, req)
 
 	if w.Code != http.StatusOK {
@@ -92,13 +84,13 @@ func TestCreateProduct_Success(t *testing.T) {
 }
 
 func TestCreateProduct_BadRequest(t *testing.T) {
-	mock := &ProductsMock{}
+	m := NewMockProducts(t)
 
 	body := bytes.NewBufferString(`"name":`)
 	req := httptest.NewRequest(http.MethodPost, "/products", body)
 	w := httptest.NewRecorder()
 
-	handler := New(slog.Default(), mock)
+	handler := New(slog.Default(), m)
 	handler.CreateProduct(w, req)
 
 	if w.Code != http.StatusBadRequest {
@@ -107,17 +99,14 @@ func TestCreateProduct_BadRequest(t *testing.T) {
 }
 
 func TestCreateProduct_Fail(t *testing.T) {
-	mock := &ProductsMock{
-		CreateProductFunc: func(ctx context.Context, product models.Product) (int, error) {
-			return 0, errors.New("DB error")
-		},
-	}
+	m := NewMockProducts(t)
+	m.On("CreateProduct", context.Background(), models.Product{Name: "Cat Food", Price: 10.5, Stock: 5}).Return(0, errors.New("DB error"))
 
 	body := bytes.NewBufferString(`{"name":"Cat Food","price":10.5,"stock":5}`)
 	req := httptest.NewRequest(http.MethodPost, "/products", body)
 	w := httptest.NewRecorder()
 
-	handler := New(slog.Default(), mock)
+	handler := New(slog.Default(), m)
 	handler.CreateProduct(w, req)
 
 	if w.Code != http.StatusInternalServerError {
@@ -130,18 +119,16 @@ func TestCreateProduct_Fail(t *testing.T) {
 // =======================
 
 func TestUpdateProduct_Success(t *testing.T) {
-	mock := &ProductsMock{
-		UpdateProductFunc: func(ctx context.Context, product models.Product) error {
-			return nil
-		},
-	}
+	m := NewMockProducts(t)
+	m.On("UpdateProduct", mock.Anything, models.Product{ID: 1, Name: "Cat Food", Price: 10.5, Stock: 5}).
+		Return(nil)
 
 	body := bytes.NewBufferString(`{"name":"Cat Food","price":10.5,"stock":5}`)
 	req := httptest.NewRequest(http.MethodPut, "/products/1", body)
 	req = withURLParam(req, "id", "1")
 	w := httptest.NewRecorder()
 
-	handler := New(slog.Default(), mock)
+	handler := New(slog.Default(), m)
 	handler.UpdateProduct(w, req)
 
 	if w.Code != http.StatusOK {
@@ -150,14 +137,14 @@ func TestUpdateProduct_Success(t *testing.T) {
 }
 
 func TestUpdateProduct_BadRequest(t *testing.T) {
-	mock := &ProductsMock{}
+	m := NewMockProducts(t)
 
 	body := bytes.NewBufferString(`"{"name":}`)
 	req := httptest.NewRequest(http.MethodPut, "/products/1", body)
 	req = withURLParam(req, "id", "1")
 	w := httptest.NewRecorder()
 
-	handler := New(slog.Default(), mock)
+	handler := New(slog.Default(), m)
 	handler.UpdateProduct(w, req)
 
 	if w.Code != http.StatusBadRequest {
@@ -166,18 +153,16 @@ func TestUpdateProduct_BadRequest(t *testing.T) {
 }
 
 func TestUpdateProduct_Fail(t *testing.T) {
-	mock := &ProductsMock{
-		UpdateProductFunc: func(ctx context.Context, product models.Product) error {
-			return errors.New("DB error")
-		},
-	}
+	m := NewMockProducts(t)
+	m.On("UpdateProduct", mock.Anything, models.Product{ID: 1, Name: "Cat Food", Price: 10.5, Stock: 5}).
+		Return(errors.New("DB error"))
 
 	body := bytes.NewBufferString(`{"name":"Cat Food","price":10.5,"stock":5}`)
 	req := httptest.NewRequest(http.MethodPut, "/products/1", body)
 	req = withURLParam(req, "id", "1")
 	w := httptest.NewRecorder()
 
-	handler := New(slog.Default(), mock)
+	handler := New(slog.Default(), m)
 	handler.UpdateProduct(w, req)
 
 	if w.Code != http.StatusInternalServerError {
@@ -190,17 +175,14 @@ func TestUpdateProduct_Fail(t *testing.T) {
 // =======================
 
 func TestDeleteProduct_Success(t *testing.T) {
-	mock := &ProductsMock{
-		DeleteProductFunc: func(ctx context.Context, id int) error {
-			return nil
-		},
-	}
+	m := NewMockProducts(t)
+	m.On("DeleteProduct", mock.Anything, 1).Return(nil)
 
 	req := httptest.NewRequest(http.MethodDelete, "/products/1", nil)
 	req = withURLParam(req, "id", "1")
 	w := httptest.NewRecorder()
 
-	handler := New(slog.Default(), mock)
+	handler := New(slog.Default(), m)
 	handler.DeleteProduct(w, req)
 
 	if w.Code != http.StatusOK {
@@ -209,12 +191,12 @@ func TestDeleteProduct_Success(t *testing.T) {
 }
 
 func TestDeleteProduct_BadRequest(t *testing.T) {
-	mock := &ProductsMock{}
+	m := NewMockProducts(t)
 
 	req := httptest.NewRequest(http.MethodDelete, "/products/", nil)
 	w := httptest.NewRecorder()
 
-	handler := New(slog.Default(), mock)
+	handler := New(slog.Default(), m)
 	handler.DeleteProduct(w, req)
 
 	if w.Code != http.StatusBadRequest {
@@ -223,17 +205,14 @@ func TestDeleteProduct_BadRequest(t *testing.T) {
 }
 
 func TestDeleteProduct_Fail(t *testing.T) {
-	mock := &ProductsMock{
-		DeleteProductFunc: func(ctx context.Context, id int) error {
-			return errors.New("DB error")
-		},
-	}
+	m := NewMockProducts(t)
+	m.On("DeleteProduct", mock.Anything, 1).Return(errors.New("DB error"))
 
 	req := httptest.NewRequest(http.MethodDelete, "/products/1", nil)
 	req = withURLParam(req, "id", "1")
 	w := httptest.NewRecorder()
 
-	handler := New(slog.Default(), mock)
+	handler := New(slog.Default(), m)
 	handler.DeleteProduct(w, req)
 
 	if w.Code != http.StatusInternalServerError {
