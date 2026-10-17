@@ -18,6 +18,10 @@ func New(ctx context.Context, databaseUrl string) (*Storage, error) {
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", fn, err)
 	}
+	if err := db.Ping(ctx); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("%s: ping database: %w", fn, err)
+	}
 
 	return &Storage{db: db}, nil
 }

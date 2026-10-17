@@ -60,9 +60,34 @@ func (_m *MockProducts) DeleteProduct(ctx context.Context, id int) error {
 	return r0
 }
 
+// GetProductByID provides a mock function with given fields: ctx, id
+func (_m *MockProducts) GetProductByID(ctx context.Context, id int) (models.Product, error) {
+	ret := _m.Called(ctx, id)
+	if len(ret) == 0 {
+		panic("no return value specified for GetProductByID")
+	}
+
+	var r0 models.Product
+	var r1 error
+	if rf, ok := ret.Get(0).(func(context.Context, int) (models.Product, error)); ok {
+		return rf(ctx, id)
+	}
+	if rf, ok := ret.Get(0).(func(context.Context, int) models.Product); ok {
+		r0 = rf(ctx, id)
+	} else if ret.Get(0) != nil {
+		r0 = ret.Get(0).(models.Product)
+	}
+	if rf, ok := ret.Get(1).(func(context.Context, int) error); ok {
+		r1 = rf(ctx, id)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
 // GetAllProducts provides a mock function with given fields: ctx
-func (_m *MockProducts) GetAllProducts(ctx context.Context) ([]models.Product, error) {
-	ret := _m.Called(ctx)
+func (_m *MockProducts) GetAllProducts(ctx context.Context, limit int, offset int) ([]models.Product, error) {
+	ret := _m.Called(ctx, limit, offset)
 
 	if len(ret) == 0 {
 		panic("no return value specified for GetAllProducts")
@@ -70,19 +95,19 @@ func (_m *MockProducts) GetAllProducts(ctx context.Context) ([]models.Product, e
 
 	var r0 []models.Product
 	var r1 error
-	if rf, ok := ret.Get(0).(func(context.Context) ([]models.Product, error)); ok {
-		return rf(ctx)
+	if rf, ok := ret.Get(0).(func(context.Context, int, int) ([]models.Product, error)); ok {
+		return rf(ctx, limit, offset)
 	}
-	if rf, ok := ret.Get(0).(func(context.Context) []models.Product); ok {
-		r0 = rf(ctx)
+	if rf, ok := ret.Get(0).(func(context.Context, int, int) []models.Product); ok {
+		r0 = rf(ctx, limit, offset)
 	} else {
 		if ret.Get(0) != nil {
 			r0 = ret.Get(0).([]models.Product)
 		}
 	}
 
-	if rf, ok := ret.Get(1).(func(context.Context) error); ok {
-		r1 = rf(ctx)
+	if rf, ok := ret.Get(1).(func(context.Context, int, int) error); ok {
+		r1 = rf(ctx, limit, offset)
 	} else {
 		r1 = ret.Error(1)
 	}

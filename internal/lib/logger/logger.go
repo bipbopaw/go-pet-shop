@@ -6,7 +6,7 @@ import (
 	"os"
 	"time"
 
-	"github.com/go-chi/chi/middleware"
+	"github.com/go-chi/chi/v5/middleware"
 )
 
 const (
@@ -29,16 +29,6 @@ func SetupLogger(env string) *slog.Logger {
 	return log
 }
 
-func LoggingMiddleware(log *slog.Logger, next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		log.Info("HTTP request:",
-			slog.String("method", r.Method),
-			slog.String("url", r.URL.String()),
-		)
-		next.ServeHTTP(w, r)
-	})
-}
-
 func CustomLogger(log *slog.Logger) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -48,12 +38,11 @@ func CustomLogger(log *slog.Logger) func(http.Handler) http.Handler {
 			next.ServeHTTP(ww, r)
 
 			log.Info("HTTP response",
+				slog.String("request_id", middleware.GetReqID(r.Context())),
 				slog.String("method", r.Method),
-				slog.String("url", r.URL.String()),
 				slog.Int("status", ww.Status()),
 				slog.Int("bytes", ww.BytesWritten()),
 				slog.Duration("duration", time.Since(start)),
-				slog.String("remote", r.RemoteAddr),
 			)
 		})
 	}

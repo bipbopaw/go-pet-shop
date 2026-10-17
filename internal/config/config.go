@@ -51,6 +51,6 @@ func MustLoad() *Config {
 		panic("DATABASE_URL not set in environment")
 	}
 
-	fmt.Printf("✅ Loaded config for environment: %s\n", env)
+	fmt.Printf("Loaded config for environment: %s\n", env)
 	return &cfg
 }

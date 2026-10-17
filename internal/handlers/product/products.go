@@ -2,25 +2,35 @@ package product
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"go-pet-shop/internal/lib/httpx"
 	"go-pet-shop/internal/models"
+	"go-pet-shop/internal/storage"
 	"log/slog"
 	"net/http"
 	"strconv"
 	"strings"
 
-	"github.com/go-chi/chi"
-	"github.com/go-chi/chi/middleware"
+	"github.com/go-chi/chi/v5"
+	"github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/render"
 )
 
-//go:generate go run github.com/vektra/mockery/v2 --name=Products --inpackage --filename=mock_Products.go --structname=MockProducts
+//go:generate go run github.com/vektra/mockery/v2@v2.53.6 --name=Products --inpackage --filename=mock_Products.go --structname=MockProducts
 type Products interface {
-	GetAllProducts(ctx context.Context) ([]models.Product, error)
+	GetAllProducts(ctx context.Context, limit, offset int) ([]models.Product, error)
+	GetProductByID(ctx context.Context, id int) (models.Product, error)
 	CreateProduct(ctx context.Context, product models.Product) (int, error)
 	DeleteProduct(ctx context.Context, id int) error
 	UpdateProduct(ctx context.Context, product models.Product) error
 }
+
+const (
+	defaultPageLimit = 20
+	maxPageLimit     = 100
+	maxJSONBodyBytes = 1 << 20
+)
 
 type Handler struct {
 	log     *slog.Logger
@@ -40,7 +50,13 @@ func (h *Handler) GetAllProducts(w http.ResponseWriter, r *http.Request) {
 		slog.String("request_id", middleware.GetReqID(r.Context())),
 	)
 
-	items, err := h.storage.GetAllProducts(r.Context())
+	limit, offset, err := httpx.ParsePagination(r.URL.Query(), defaultPageLimit, maxPageLimit)
+	if err != nil {
+		writeError(w, r, http.StatusBadRequest, "Bad request", err.Error())
+		return
+	}
+
+	items, err := h.storage.GetAllProducts(r.Context(), limit, offset)
 
 	if err != nil {
 		log.Error("failed to get products", slog.Any("error", err))
@@ -53,11 +69,42 @@ func (h *Handler) GetAllProducts(w http.ResponseWriter, r *http.Request) {
 	}
 
 	log.Info("Retrieved products successfully",
-		slog.String("url", r.URL.String()),
 		slog.Int("count", len(items)),
 	)
 
 	render.JSON(w, r, items)
+}
+
+func (h *Handler) GetProductByID(w http.ResponseWriter, r *http.Request) {
+	const fn = "handlers.products.GetProductByID"
+	log := h.log.With(
+		slog.String("fn", fn),
+		slog.String("request_id", middleware.GetReqID(r.Context())),
+	)
+
+	id, err := strconv.Atoi(chi.URLParam(r, "id"))
+	if err != nil || id <= 0 {
+		writeError(w, r, http.StatusBadRequest, "Bad request", "Product ID must be a positive number")
+		return
+	}
+
+	item, err := h.storage.GetProductByID(r.Context(), id)
+	if err != nil {
+		if errors.Is(err, storage.ErrNotFound) {
+			writeError(w, r, http.StatusNotFound, "Not found", fmt.Sprintf("Product with ID %d does not exist", id))
+			return
+		}
+		log.Error("failed to get product", slog.Any("error", err))
+		writeError(w, r, http.StatusInternalServerError, "Internal server error", "Failed to retrieve product")
+		return
+	}
+
+	render.JSON(w, r, item)
+}
+
+func writeError(w http.ResponseWriter, r *http.Request, status int, title, message string) {
+	render.Status(r, status)
+	render.JSON(w, r, map[string]string{"error": title, "message": message})
 }
 
 func (h *Handler) CreateProduct(w http.ResponseWriter, r *http.Request) {
@@ -68,11 +115,17 @@ func (h *Handler) CreateProduct(w http.ResponseWriter, r *http.Request) {
 		slog.String("request_id", middleware.GetReqID(r.Context())),
 	)
 
-	log.Info("Creating new product", slog.String("url", r.URL.String()))
+	log.Info("Creating new product")
 
 	var product models.Product
+	r.Body = http.MaxBytesReader(w, r.Body, maxJSONBodyBytes)
 	if err := render.DecodeJSON(r.Body, &product); err != nil {
 		log.Error("failed to decode request body", slog.Any("error", err))
+		var maxBytesErr *http.MaxBytesError
+		if errors.As(err, &maxBytesErr) {
+			writeError(w, r, http.StatusRequestEntityTooLarge, "Payload too large", "Payload exceeds the 1 MiB limit")
+			return
+		}
 		w.WriteHeader(http.StatusBadRequest)
 		render.JSON(w, r, map[string]string{
 			"error":   "Bad request",
@@ -82,7 +135,7 @@ func (h *Handler) CreateProduct(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Валидация
-	if product.Name == "" {
+	if strings.TrimSpace(product.Name) == "" {
 		log.Error("product name is empty")
 		w.WriteHeader(http.StatusBadRequest)
 		render.JSON(w, r, map[string]string{
@@ -104,11 +157,11 @@ func (h *Handler) CreateProduct(w http.ResponseWriter, r *http.Request) {
 
 	if product.Stock < 0 {
 		log.Error("product stock is negative", slog.Int("stock", product.Stock))
+		w.WriteHeader(http.StatusBadRequest)
 		render.JSON(w, r, map[string]string{
 			"error":   "Bad request",
 			"message": "Product stock cannot be negative",
 		})
-		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
 
@@ -127,11 +180,11 @@ func (h *Handler) CreateProduct(w http.ResponseWriter, r *http.Request) {
 	log.Info("Product created successfully",
 		slog.Int("id", productID),
 		slog.String("name", product.Name),
-		slog.String("url", r.URL.String()),
 	)
 
 	// Возвращаем созданный продукт с его ID
 	product.ID = productID
+	render.Status(r, http.StatusCreated)
 	render.JSON(w, r, map[string]interface{}{
 		"status":  "Product created successfully",
 		"id":      productID,
@@ -147,7 +200,7 @@ func (h *Handler) DeleteProduct(w http.ResponseWriter, r *http.Request) {
 		slog.String("request_id", middleware.GetReqID(r.Context())),
 	)
 
-	log.Info("Deleting product", slog.String("url", r.URL.String()))
+	log.Info("Deleting product")
 
 	idStr := chi.URLParam(r, "id")
 	if idStr == "" {
@@ -174,10 +227,7 @@ func (h *Handler) DeleteProduct(w http.ResponseWriter, r *http.Request) {
 
 	// Удаляем продукт
 	if err := h.storage.DeleteProduct(r.Context(), id); err != nil {
-		// Проверяем, является ли ошибка "не найдено" с помощью strings.Contains
-		if strings.Contains(strings.ToLower(err.Error()), "not found") ||
-			strings.Contains(strings.ToLower(err.Error()), "no rows") ||
-			strings.Contains(strings.ToLower(err.Error()), "rows affected: 0") {
+		if errors.Is(err, storage.ErrNotFound) {
 			log.Warn("product not found for deletion", slog.Int("id", id))
 			w.WriteHeader(http.StatusNotFound)
 			render.JSON(w, r, map[string]interface{}{
@@ -199,7 +249,6 @@ func (h *Handler) DeleteProduct(w http.ResponseWriter, r *http.Request) {
 
 	log.Info("Deleted product successfully",
 		slog.Int("id", id),
-		slog.String("url", r.URL.String()),
 	)
 
 	render.JSON(w, r, map[string]interface{}{
@@ -217,7 +266,7 @@ func (h *Handler) UpdateProduct(w http.ResponseWriter, r *http.Request) {
 		slog.String("request_id", middleware.GetReqID(r.Context())),
 	)
 
-	log.Info("Updating product", slog.String("url", r.URL.String()))
+	log.Info("Updating product")
 
 	// Получаем ID из URL
 	idStr := chi.URLParam(r, "id")
@@ -245,8 +294,14 @@ func (h *Handler) UpdateProduct(w http.ResponseWriter, r *http.Request) {
 
 	// Декодируем тело запроса
 	var product models.Product
+	r.Body = http.MaxBytesReader(w, r.Body, maxJSONBodyBytes)
 	if err := render.DecodeJSON(r.Body, &product); err != nil {
 		log.Error("failed to decode request body", slog.Any("error", err))
+		var maxBytesErr *http.MaxBytesError
+		if errors.As(err, &maxBytesErr) {
+			writeError(w, r, http.StatusRequestEntityTooLarge, "Payload too large", "Payload exceeds the 1 MiB limit")
+			return
+		}
 		w.WriteHeader(http.StatusBadRequest)
 		render.JSON(w, r, map[string]string{
 			"error":   "Bad request",
@@ -259,7 +314,7 @@ func (h *Handler) UpdateProduct(w http.ResponseWriter, r *http.Request) {
 	product.ID = id
 
 	// Валидация
-	if product.Name == "" {
+	if strings.TrimSpace(product.Name) == "" {
 		log.Error("product name is empty")
 		w.WriteHeader(http.StatusBadRequest)
 		render.JSON(w, r, map[string]string{
@@ -291,10 +346,7 @@ func (h *Handler) UpdateProduct(w http.ResponseWriter, r *http.Request) {
 
 	// Обновляем продукт
 	if err := h.storage.UpdateProduct(r.Context(), product); err != nil {
-		// Проверяем, является ли ошибка "не найдено" с помощью strings.Contains
-		if strings.Contains(strings.ToLower(err.Error()), "not found") ||
-			strings.Contains(strings.ToLower(err.Error()), "no rows") ||
-			strings.Contains(strings.ToLower(err.Error()), "rows affected: 0") {
+		if errors.Is(err, storage.ErrNotFound) {
 			log.Warn("product not found for update", slog.Int("id", id))
 			w.WriteHeader(http.StatusNotFound)
 			render.JSON(w, r, map[string]interface{}{
@@ -317,7 +369,6 @@ func (h *Handler) UpdateProduct(w http.ResponseWriter, r *http.Request) {
 	log.Info("Product updated successfully",
 		slog.Int("id", id),
 		slog.String("name", product.Name),
-		slog.String("url", r.URL.String()),
 	)
 
 	// Возвращаем обновленный продукт

@@ -5,6 +5,7 @@ import (
 	"go-pet-shop/internal/config"
 	"go-pet-shop/internal/handlers"
 	"go-pet-shop/internal/handlers/product"
+	userHandler "go-pet-shop/internal/handlers/user"
 	"go-pet-shop/internal/lib/logger"
 	"go-pet-shop/internal/storage/postgres"
 	"log/slog"
@@ -14,8 +15,8 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/go-chi/chi"
-	"github.com/go-chi/chi/middleware"
+	"github.com/go-chi/chi/v5"
+	"github.com/go-chi/chi/v5/middleware"
 )
 
 func main() {
@@ -52,27 +53,32 @@ func main() {
 
 	// Handlers
 	productHandler := product.New(log, storage)
+	usersHandler := userHandler.New(log, storage)
 	router.Get("/health", handlers.StatusHandler)
+	router.Post("/users", usersHandler.CreateUser)
+	router.Get("/users", usersHandler.GetAllUsers)
+	router.Get("/users/{email}", usersHandler.GetUserByEmail)
 	router.Get("/products", productHandler.GetAllProducts)
+	router.Get("/products/{id}", productHandler.GetProductByID)
 	router.Post("/products", productHandler.CreateProduct)
 	router.Delete("/products/{id}", productHandler.DeleteProduct)
 	router.Put("/products/{id}", productHandler.UpdateProduct)
 
 	// Settings and started server
 	srv := &http.Server{
-		Addr:         cfg.HTTPServer.Address,
+		Addr:         cfg.Address,
 		Handler:      router,
-		ReadTimeout:  cfg.HTTPServer.Timeout,
-		WriteTimeout: cfg.HTTPServer.Timeout,
-		IdleTimeout:  cfg.HTTPServer.IdleTimeout,
+		ReadTimeout:  cfg.Timeout,
+		WriteTimeout: cfg.Timeout,
+		IdleTimeout:  cfg.IdleTimeout,
 	}
 
 	// Запуск сервера в горутине для graceful shutdown
+	serverErrors := make(chan error, 1)
 	go func() {
-		log.Info("Starting server on", slog.String("address", cfg.HTTPServer.Address))
+		log.Info("Starting server on", slog.String("address", cfg.Address))
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			log.Error("Server error", slog.String("error", err.Error()))
-			os.Exit(1)
+			serverErrors <- err
 		}
 	}()
 
@@ -80,7 +86,12 @@ func main() {
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, os.Interrupt, syscall.SIGTERM)
 
-	<-stop // Ждем сигнал завершения
+	select {
+	case err := <-serverErrors:
+		log.Error("Server error", slog.String("error", err.Error()))
+		return
+	case <-stop:
+	}
 
 	log.Info("Shutting down server...")
 
@@ -89,6 +100,10 @@ func main() {
 
 	if err := srv.Shutdown(ctx); err != nil {
 		log.Error("Server shutdown error", slog.String("error", err.Error()))
+		if closeErr := srv.Close(); closeErr != nil {
+			log.Error("Server close error", slog.String("error", closeErr.Error()))
+		}
+		return
 	}
 
 	log.Info("Server stopped gracefully")

@@ -1,18 +1,20 @@
+version: "2"
+
 linters:
+  default: none
   enable:
-    - unused
     - bodyclose
-    - govet
-    - staticcheck
     - errcheck
-    - ineffassign
     - gocyclo
+    - govet
+    - ineffassign
+    - staticcheck
+    - unused
 
 run:
   timeout: 2m
   tests: true
 
 issues:
-  exclude-use-default: false
   max-issues-per-linter: 0
   max-same-issues: 0
