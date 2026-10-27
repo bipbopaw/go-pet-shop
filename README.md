@@ -10,6 +10,7 @@
 | `POST` | `/users` | Создать пользователя |
 | `GET` | `/users` | Получить список пользователей |
 | `GET` | `/users/{email}` | Найти пользователя по email |
+| `POST` | `/checkout` | Оформить заказ и оплату |
 | `POST` | `/orders` | Создать заказ |
 | `POST` | `/orders/{id}/items` | Добавить позицию в заказ |
 | `GET` | `/orders/{id}` | Получить заказ с позициями и данными товаров |
@@ -20,7 +21,7 @@
 | `PUT` | `/products/{id}` | Обновить товар |
 | `DELETE` | `/products/{id}` | Удалить товар |
 
-Для создания заказа передайте `user_id` и `total_price`, например `{"user_id":1,"total_price":25.50}`. Чтобы добавить позицию, передайте `product_id` и `quantity`, например `{"product_id":2,"quantity":3}`. ID позиции возвращается в ответе.
+Для оформления заказа передайте email пользователя и список товаров с количеством, например `{"email":"user@example.com","items":[{"product_id":2,"quantity":3}]}`. Заказ, позиции, списание остатков и запись оплаты сохраняются атомарно. Для ручного создания заказа передайте `user_id` и `total_price`; чтобы добавить позицию, передайте `product_id` и `quantity`. ID позиции возвращается в ответе.
 
 Для списков пользователей и товаров поддерживаются query-параметры `limit` и `offset`, например `/products?limit=10&offset=20`. По умолчанию возвращается до 20 записей; допустимый `limit` — от 1 до 100. JSON-тела запросов ограничены 1 МиБ.
 
@@ -59,9 +60,12 @@ go run ./cmd/app
 
 Для запуска через Docker Compose задайте в `.env` значения `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB` и `DATABASE_URL`. Внутри Compose адрес базы в `DATABASE_URL` должен указывать на хост `postgres`, например `postgres://user:password@postgres:5432/petshop?sslmode=disable`.
 
-## Миграции и линтер
+## Тесты, миграции и линтер
 
 ```sh
+task test
 task migrate
 task linter
 ```
+
+Интеграционные тесты PostgreSQL запускаются, если задана переменная `TEST_DATABASE_URL`. В CI они выполняются с отдельной тестовой базой.

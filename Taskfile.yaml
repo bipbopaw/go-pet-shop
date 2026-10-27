@@ -9,6 +9,11 @@ tasks:
     dotenv: [".env"]
     cmds:
       - go run cmd/migrator/main.go --migrations-path "./migrations"
+
+  test:
+    desc: "Run tests with the race detector and coverage"
+    cmds:
+      - go test -race -cover ./...
     
   linter:
     desc: "Run linters on the codebase"

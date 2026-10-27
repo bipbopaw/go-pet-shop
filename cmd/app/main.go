@@ -55,6 +55,7 @@ func main() {
 	router.Get("/users", usersHandler.GetAllUsers)
 	router.Get("/users/{email}", usersHandler.GetUserByEmail)
 	router.Post("/orders", ordersHandler.CreateOrder)
+	router.Post("/checkout", ordersHandler.Checkout)
 	router.Post("/orders/{id}/items", ordersHandler.AddOrderItem)
 	router.Get("/orders/{id}", ordersHandler.GetOrderByID)
 	router.Get("/users/{email}/orders", ordersHandler.GetOrdersByUserEmail)

@@ -7,13 +7,16 @@ import (
 	"go-pet-shop/internal/storage"
 	"log/slog"
 	"net/http"
+	"net/mail"
 	"strconv"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/render"
 )
 
 type Orders interface {
+	PlaceOrder(ctx context.Context, userEmail string, items []models.OrderItem) (int, error)
 	CreateOrder(ctx context.Context, order models.Order) (int, error)
 	AddOrderItem(ctx context.Context, item models.OrderItem) (int, error)
 	GetOrderByID(ctx context.Context, id int) (models.Order, error)
@@ -27,6 +30,53 @@ type Handler struct {
 }
 
 func New(log *slog.Logger, s Orders) *Handler { return &Handler{log: log, storage: s} }
+
+func (h *Handler) Checkout(w http.ResponseWriter, r *http.Request) {
+	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
+	var request struct {
+		Email string             `json:"email"`
+		Items []models.OrderItem `json:"items"`
+	}
+	if err := render.DecodeJSON(r.Body, &request); err != nil || request.Email == "" || len(request.Items) == 0 {
+		render.Status(r, http.StatusBadRequest)
+		render.JSON(w, r, map[string]string{"message": "email and at least one order item are required"})
+		return
+	}
+	request.Email = strings.TrimSpace(request.Email)
+	address, err := mail.ParseAddress(request.Email)
+	if err != nil || address.Address != request.Email {
+		render.Status(r, http.StatusBadRequest)
+		render.JSON(w, r, map[string]string{"message": "A valid email is required"})
+		return
+	}
+	for _, item := range request.Items {
+		if item.ProductID <= 0 || item.Quantity <= 0 {
+			render.Status(r, http.StatusBadRequest)
+			render.JSON(w, r, map[string]string{"message": "product_id and quantity must be positive"})
+			return
+		}
+	}
+
+	id, err := h.storage.PlaceOrder(r.Context(), request.Email, request.Items)
+	if errors.Is(err, storage.ErrNotFound) {
+		render.Status(r, http.StatusNotFound)
+		render.JSON(w, r, map[string]string{"message": "User or product not found"})
+		return
+	}
+	if errors.Is(err, storage.ErrInsufficientStock) {
+		render.Status(r, http.StatusConflict)
+		render.JSON(w, r, map[string]string{"message": "Insufficient product stock"})
+		return
+	}
+	if err != nil {
+		h.log.Error("failed to place order", slog.Any("error", err))
+		render.Status(r, http.StatusInternalServerError)
+		render.JSON(w, r, map[string]string{"message": "Failed to place order"})
+		return
+	}
+	render.Status(r, http.StatusCreated)
+	render.JSON(w, r, map[string]int{"order_id": id})
+}
 
 func (h *Handler) CreateOrder(w http.ResponseWriter, r *http.Request) {
 	var order models.Order

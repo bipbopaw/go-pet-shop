@@ -10,6 +10,80 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
+func (s *Storage) PlaceOrder(ctx context.Context, userEmail string, items []models.OrderItem) (int, error) {
+	const fn = "storage.postgres.order.PlaceOrder"
+	tx, err := s.db.Begin(ctx)
+	if err != nil {
+		return 0, fmt.Errorf("%s: begin transaction: %w", fn, err)
+	}
+	defer tx.Rollback(ctx)
+
+	var userID int
+	err = tx.QueryRow(ctx, `SELECT id FROM users WHERE email = $1`, userEmail).Scan(&userID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return 0, fmt.Errorf("%s: user: %w", fn, storage.ErrNotFound)
+	}
+	if err != nil {
+		return 0, fmt.Errorf("%s: find user: %w", fn, err)
+	}
+
+	type pricedItem struct {
+		item  models.OrderItem
+		price float64
+	}
+	pricedItems := make([]pricedItem, 0, len(items))
+	var totalPrice float64
+	for _, item := range items {
+		var price float64
+		err := tx.QueryRow(ctx,
+			`UPDATE products SET stock = stock - $1 WHERE id = $2 AND stock >= $1 RETURNING price`,
+			item.Quantity, item.ProductID,
+		).Scan(&price)
+		if errors.Is(err, pgx.ErrNoRows) {
+			var exists bool
+			if checkErr := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM products WHERE id = $1)`, item.ProductID).Scan(&exists); checkErr != nil {
+				return 0, fmt.Errorf("%s: check product: %w", fn, checkErr)
+			}
+			if !exists {
+				return 0, fmt.Errorf("%s: product id=%d: %w", fn, item.ProductID, storage.ErrNotFound)
+			}
+			return 0, fmt.Errorf("%s: product id=%d: %w", fn, item.ProductID, storage.ErrInsufficientStock)
+		}
+		if err != nil {
+			return 0, fmt.Errorf("%s: update stock: %w", fn, err)
+		}
+		pricedItems = append(pricedItems, pricedItem{item: item, price: price})
+		totalPrice += price * float64(item.Quantity)
+	}
+
+	var orderID int
+	err = tx.QueryRow(ctx,
+		`INSERT INTO orders (user_id, total_price) VALUES ($1, $2) RETURNING id`, userID, totalPrice,
+	).Scan(&orderID)
+	if err != nil {
+		return 0, fmt.Errorf("%s: create order: %w", fn, err)
+	}
+	for _, priced := range pricedItems {
+		_, err = tx.Exec(ctx,
+			`INSERT INTO order_items (order_id, product_id, quantity) VALUES ($1, $2, $3)`,
+			orderID, priced.item.ProductID, priced.item.Quantity,
+		)
+		if err != nil {
+			return 0, fmt.Errorf("%s: create order item: %w", fn, err)
+		}
+	}
+	_, err = tx.Exec(ctx,
+		`INSERT INTO transactions (order_id, amount, status) VALUES ($1, $2, $3)`, orderID, totalPrice, "completed",
+	)
+	if err != nil {
+		return 0, fmt.Errorf("%s: create payment transaction: %w", fn, err)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return 0, fmt.Errorf("%s: commit transaction: %w", fn, err)
+	}
+	return orderID, nil
+}
+
 func (s *Storage) CreateOrder(ctx context.Context, order models.Order) (int, error) {
 	const fn = "storage.postgres.order.CreateOrder"
 	var id int

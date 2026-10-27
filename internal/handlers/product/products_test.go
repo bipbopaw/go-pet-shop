@@ -169,6 +169,30 @@ func TestCreateProduct_BadRequest(t *testing.T) {
 	}
 }
 
+func TestCreateProduct_InvalidFields(t *testing.T) {
+	tests := []struct {
+		name string
+		body string
+	}{
+		{name: "missing name", body: `{"price":1,"stock":1}`},
+		{name: "negative price", body: `{"name":"Food","price":-1,"stock":1}`},
+		{name: "negative stock", body: `{"name":"Food","price":1,"stock":-1}`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			m := NewMockProducts(t)
+			req := httptest.NewRequest(http.MethodPost, "/products", strings.NewReader(tt.body))
+			w := httptest.NewRecorder()
+
+			New(slog.Default(), m).CreateProduct(w, req)
+
+			if w.Code != http.StatusBadRequest {
+				t.Fatalf("expected status 400, got %d, body: %s", w.Code, w.Body.String())
+			}
+		})
+	}
+}
+
 func TestCreateProduct_BodyTooLarge(t *testing.T) {
 	m := NewMockProducts(t)
 	body := `{"name":"` + strings.Repeat("x", 1<<20) + `","price":1,"stock":1}`
@@ -250,6 +274,20 @@ func TestUpdateProduct_Fail(t *testing.T) {
 	}
 }
 
+func TestUpdateProduct_NotFound(t *testing.T) {
+	m := NewMockProducts(t)
+	m.On("UpdateProduct", mock.Anything, models.Product{ID: 1, Name: "Cat Food", Price: 10.5, Stock: 5}).Return(storage.ErrNotFound)
+	req := httptest.NewRequest(http.MethodPut, "/products/1", strings.NewReader(`{"name":"Cat Food","price":10.5,"stock":5}`))
+	req = withURLParam(req, "id", "1")
+	w := httptest.NewRecorder()
+
+	New(slog.Default(), m).UpdateProduct(w, req)
+
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("expected status 404, got %d, body: %s", w.Code, w.Body.String())
+	}
+}
+
 func TestDeleteProduct_Success(t *testing.T) {
 	m := NewMockProducts(t)
 	m.On("DeleteProduct", mock.Anything, 1).Return(nil)
@@ -293,5 +331,18 @@ func TestDeleteProduct_Fail(t *testing.T) {
 
 	if w.Code != http.StatusInternalServerError {
 		t.Fatalf("expected status 500, got %d, body: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestDeleteProduct_NotFound(t *testing.T) {
+	m := NewMockProducts(t)
+	m.On("DeleteProduct", mock.Anything, 1).Return(storage.ErrNotFound)
+	req := withURLParam(httptest.NewRequest(http.MethodDelete, "/products/1", nil), "id", "1")
+	w := httptest.NewRecorder()
+
+	New(slog.Default(), m).DeleteProduct(w, req)
+
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("expected status 404, got %d, body: %s", w.Code, w.Body.String())
 	}
 }

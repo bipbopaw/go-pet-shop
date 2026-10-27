@@ -17,6 +17,11 @@ import (
 
 type mockOrders struct{ mock.Mock }
 
+func (m *mockOrders) PlaceOrder(ctx context.Context, email string, items []models.OrderItem) (int, error) {
+	args := m.Called(ctx, email, items)
+	return args.Int(0), args.Error(1)
+}
+
 func (m *mockOrders) CreateOrder(ctx context.Context, order models.Order) (int, error) {
 	args := m.Called(ctx, order)
 	return args.Int(0), args.Error(1)
@@ -261,6 +266,88 @@ func TestGetOrdersByUserEmail_StorageError(t *testing.T) {
 	w := httptest.NewRecorder()
 
 	New(slog.Default(), m).GetOrdersByUserEmail(w, req)
+
+	if w.Code != http.StatusInternalServerError {
+		t.Fatalf("expected status 500, got %d, body: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestCheckout_Success(t *testing.T) {
+	m := newMockOrders(t)
+	items := []models.OrderItem{{ProductID: 7, Quantity: 2}}
+	m.On("PlaceOrder", mock.Anything, "remy@example.com", items).Return(23, nil)
+	req := httptest.NewRequest(http.MethodPost, "/checkout", bytes.NewBufferString(`{"email":"remy@example.com","items":[{"product_id":7,"quantity":2}]}`))
+	w := httptest.NewRecorder()
+
+	New(slog.Default(), m).Checkout(w, req)
+
+	if w.Code != http.StatusCreated || !bytes.Contains(w.Body.Bytes(), []byte(`"order_id":23`)) {
+		t.Fatalf("expected status 201 with order ID, got %d, body: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestCheckout_InvalidInput(t *testing.T) {
+	tests := []struct {
+		name string
+		body string
+	}{
+		{name: "invalid JSON", body: `{"email":`},
+		{name: "missing email", body: `{"items":[{"product_id":7,"quantity":1}]}`},
+		{name: "invalid email", body: `{"email":"invalid","items":[{"product_id":7,"quantity":1}]}`},
+		{name: "empty items", body: `{"email":"remy@example.com","items":[]}`},
+		{name: "invalid item", body: `{"email":"remy@example.com","items":[{"product_id":7,"quantity":0}]}`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			m := newMockOrders(t)
+			req := httptest.NewRequest(http.MethodPost, "/checkout", bytes.NewBufferString(tt.body))
+			w := httptest.NewRecorder()
+
+			New(slog.Default(), m).Checkout(w, req)
+
+			if w.Code != http.StatusBadRequest {
+				t.Fatalf("expected status 400, got %d, body: %s", w.Code, w.Body.String())
+			}
+		})
+	}
+}
+
+func TestCheckout_InsufficientStock(t *testing.T) {
+	m := newMockOrders(t)
+	items := []models.OrderItem{{ProductID: 7, Quantity: 2}}
+	m.On("PlaceOrder", mock.Anything, "remy@example.com", items).Return(0, storage.ErrInsufficientStock)
+	req := httptest.NewRequest(http.MethodPost, "/checkout", bytes.NewBufferString(`{"email":"remy@example.com","items":[{"product_id":7,"quantity":2}]}`))
+	w := httptest.NewRecorder()
+
+	New(slog.Default(), m).Checkout(w, req)
+
+	if w.Code != http.StatusConflict {
+		t.Fatalf("expected status 409, got %d, body: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestCheckout_UserOrProductNotFound(t *testing.T) {
+	m := newMockOrders(t)
+	items := []models.OrderItem{{ProductID: 7, Quantity: 2}}
+	m.On("PlaceOrder", mock.Anything, "remy@example.com", items).Return(0, storage.ErrNotFound)
+	req := httptest.NewRequest(http.MethodPost, "/checkout", bytes.NewBufferString(`{"email":"remy@example.com","items":[{"product_id":7,"quantity":2}]}`))
+	w := httptest.NewRecorder()
+
+	New(slog.Default(), m).Checkout(w, req)
+
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("expected status 404, got %d, body: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestCheckout_StorageError(t *testing.T) {
+	m := newMockOrders(t)
+	items := []models.OrderItem{{ProductID: 7, Quantity: 2}}
+	m.On("PlaceOrder", mock.Anything, "remy@example.com", items).Return(0, errors.New("DB error"))
+	req := httptest.NewRequest(http.MethodPost, "/checkout", bytes.NewBufferString(`{"email":"remy@example.com","items":[{"product_id":7,"quantity":2}]}`))
+	w := httptest.NewRecorder()
+
+	New(slog.Default(), m).Checkout(w, req)
 
 	if w.Code != http.StatusInternalServerError {
 		t.Fatalf("expected status 500, got %d, body: %s", w.Code, w.Body.String())
