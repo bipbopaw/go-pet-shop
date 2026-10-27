@@ -6,7 +6,7 @@ type Product struct {
 	ID    int     `json:"id"`
 	Name  string  `json:"name"`
 	Price float64 `json:"price"`
-	Stock int     `json:"stock"` // количество на складе
+	Stock int     `json:"stock"`
 }
 
 type User struct {
@@ -16,14 +16,18 @@ type User struct {
 }
 
 type Order struct {
-	ID        int       `json:"id"`
-	UserID    int       `json:"user_id"`
-	CreatedAt time.Time `json:"created_at"`
+	ID         int         `json:"id"`
+	UserID     int         `json:"user_id"`
+	TotalPrice float64     `json:"total_price"`
+	CreatedAt  time.Time   `json:"created_at"`
+	Items      []OrderItem `json:"items,omitempty"`
 }
 
 type OrderItem struct {
-	ID        int `json:"id"`
-	OrderID   int `json:"order_id"`
-	ProductID int `json:"product_id"`
-	Quantity  int `json:"quantity"`
+	ID          int     `json:"id"`
+	OrderID     int     `json:"order_id"`
+	ProductID   int     `json:"product_id"`
+	ProductName string  `json:"product_name,omitempty"`
+	UnitPrice   float64 `json:"unit_price,omitempty"`
+	Quantity    int     `json:"quantity"`
 }

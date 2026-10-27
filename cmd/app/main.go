@@ -4,6 +4,7 @@ import (
 	"context"
 	"go-pet-shop/internal/config"
 	"go-pet-shop/internal/handlers"
+	orderHandler "go-pet-shop/internal/handlers/order"
 	"go-pet-shop/internal/handlers/product"
 	userHandler "go-pet-shop/internal/handlers/user"
 	"go-pet-shop/internal/lib/logger"
@@ -22,11 +23,9 @@ import (
 func main() {
 	cfg := config.MustLoad()
 
-	// Settings logger
 	log := logger.SetupLogger(cfg.Env)
 	log.Info("starting the project...", slog.String("env", cfg.Env))
 
-	// Settings and started database
 	ctx, cancel := context.WithTimeout(context.Background(), cfg.DatabaseTimeout)
 	defer cancel()
 
@@ -42,28 +41,29 @@ func main() {
 		log.Info("storage closed")
 	}()
 
-	// Init router
 	router := chi.NewRouter()
 
-	// Middlewares
 	router.Use(middleware.RequestID)
 	router.Use(middleware.Recoverer)
 	router.Use(logger.CustomLogger(log))
 
-	// Handlers
 	productHandler := product.New(log, storage)
 	usersHandler := userHandler.New(log, storage)
+	ordersHandler := orderHandler.New(log, storage)
 	router.Get("/health", handlers.StatusHandler)
 	router.Post("/users", usersHandler.CreateUser)
 	router.Get("/users", usersHandler.GetAllUsers)
 	router.Get("/users/{email}", usersHandler.GetUserByEmail)
+	router.Post("/orders", ordersHandler.CreateOrder)
+	router.Post("/orders/{id}/items", ordersHandler.AddOrderItem)
+	router.Get("/orders/{id}", ordersHandler.GetOrderByID)
+	router.Get("/users/{email}/orders", ordersHandler.GetOrdersByUserEmail)
 	router.Get("/products", productHandler.GetAllProducts)
 	router.Get("/products/{id}", productHandler.GetProductByID)
 	router.Post("/products", productHandler.CreateProduct)
 	router.Delete("/products/{id}", productHandler.DeleteProduct)
 	router.Put("/products/{id}", productHandler.UpdateProduct)
 
-	// Settings and started server
 	srv := &http.Server{
 		Addr:         cfg.Address,
 		Handler:      router,
@@ -72,7 +72,6 @@ func main() {
 		IdleTimeout:  cfg.IdleTimeout,
 	}
 
-	// Запуск сервера в горутине для graceful shutdown
 	serverErrors := make(chan error, 1)
 	go func() {
 		log.Info("Starting server on", slog.String("address", cfg.Address))
@@ -81,7 +80,6 @@ func main() {
 		}
 	}()
 
-	// Graceful shutdown
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, os.Interrupt, syscall.SIGTERM)
 

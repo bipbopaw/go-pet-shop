@@ -10,11 +10,6 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
-// ❗ Памятка - Контекст не должен создаваться через context.Background() внутри методов.
-// Нужно пробросить ctx из main.go (или из вызывающего слоя) до уровня storage.
-// Иначе тайм-ауты и отмены не будут работать — все запросы всегда будут выполняться
-// с “вечным” background-контекстом.
-// GetAllProducts - получает все продукты
 func (s *Storage) GetAllProducts(ctx context.Context, limit, offset int) ([]models.Product, error) {
 	const fn = "storage.postgres.product.GetAllProducts"
 
@@ -35,7 +30,6 @@ func (s *Storage) GetAllProducts(ctx context.Context, limit, offset int) ([]mode
 		products = append(products, p)
 	}
 
-	// Проверяем ошибки итерации
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("%s: %w", fn, err)
 	}
@@ -59,7 +53,6 @@ func (s *Storage) GetProductByID(ctx context.Context, id int) (models.Product, e
 	return p, nil
 }
 
-// CreateProduct - создает продукт и возвращает его ID
 func (s *Storage) CreateProduct(ctx context.Context, p models.Product) (int, error) {
 	const fn = "storage.postgres.product.CreateProduct"
 
@@ -75,7 +68,6 @@ func (s *Storage) CreateProduct(ctx context.Context, p models.Product) (int, err
 	return id, nil
 }
 
-// DeleteProduct - удаляет продукт по ID
 func (s *Storage) DeleteProduct(ctx context.Context, id int) error {
 	const fn = "storage.postgres.product.DeleteProduct"
 
@@ -93,7 +85,6 @@ func (s *Storage) DeleteProduct(ctx context.Context, id int) error {
 	return nil
 }
 
-// UpdateProduct - обновляет продукт
 func (s *Storage) UpdateProduct(ctx context.Context, p models.Product) error {
 	const fn = "storage.postgres.product.UpdateProduct"
 

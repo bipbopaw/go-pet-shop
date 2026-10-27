@@ -1,8 +1,4 @@
-# See: https://taskfile.dev/api/
 
-# For generate input command:
-# task generate
-# task linter
 
 version: "3"
 

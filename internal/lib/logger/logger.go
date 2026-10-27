@@ -23,7 +23,6 @@ func SetupLogger(env string) *slog.Logger {
 	case envProd:
 		log = slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
 	default:
-		// На всякий случай создаем дефолтный логгер вместо nil
 		log = slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelDebug}))
 	}
 	return log

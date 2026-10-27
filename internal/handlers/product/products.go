@@ -17,7 +17,6 @@ import (
 	"github.com/go-chi/render"
 )
 
-//go:generate go run github.com/vektra/mockery/v2@v2.53.6 --name=Products --inpackage --filename=mock_Products.go --structname=MockProducts
 type Products interface {
 	GetAllProducts(ctx context.Context, limit, offset int) ([]models.Product, error)
 	GetProductByID(ctx context.Context, id int) (models.Product, error)
@@ -134,7 +133,6 @@ func (h *Handler) CreateProduct(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Валидация
 	if strings.TrimSpace(product.Name) == "" {
 		log.Error("product name is empty")
 		w.WriteHeader(http.StatusBadRequest)
@@ -165,7 +163,6 @@ func (h *Handler) CreateProduct(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Создаем продукт
 	productID, err := h.storage.CreateProduct(r.Context(), product)
 	if err != nil {
 		log.Error("failed to create product", slog.Any("error", err))
@@ -182,7 +179,6 @@ func (h *Handler) CreateProduct(w http.ResponseWriter, r *http.Request) {
 		slog.String("name", product.Name),
 	)
 
-	// Возвращаем созданный продукт с его ID
 	product.ID = productID
 	render.Status(r, http.StatusCreated)
 	render.JSON(w, r, map[string]interface{}{
@@ -213,7 +209,6 @@ func (h *Handler) DeleteProduct(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Конвертируем ID в int
 	id, err := strconv.Atoi(idStr)
 	if err != nil {
 		log.Error("invalid id format", slog.Any("error", err), slog.String("id", idStr))
@@ -225,7 +220,6 @@ func (h *Handler) DeleteProduct(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Удаляем продукт
 	if err := h.storage.DeleteProduct(r.Context(), id); err != nil {
 		if errors.Is(err, storage.ErrNotFound) {
 			log.Warn("product not found for deletion", slog.Int("id", id))
@@ -268,7 +262,6 @@ func (h *Handler) UpdateProduct(w http.ResponseWriter, r *http.Request) {
 
 	log.Info("Updating product")
 
-	// Получаем ID из URL
 	idStr := chi.URLParam(r, "id")
 	if idStr == "" {
 		log.Error("empty id in URL")
@@ -280,7 +273,6 @@ func (h *Handler) UpdateProduct(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Конвертируем ID в int
 	id, err := strconv.Atoi(idStr)
 	if err != nil {
 		log.Error("invalid id format", slog.Any("error", err), slog.String("id", idStr))
@@ -292,7 +284,6 @@ func (h *Handler) UpdateProduct(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Декодируем тело запроса
 	var product models.Product
 	r.Body = http.MaxBytesReader(w, r.Body, maxJSONBodyBytes)
 	if err := render.DecodeJSON(r.Body, &product); err != nil {
@@ -310,10 +301,8 @@ func (h *Handler) UpdateProduct(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Устанавливаем ID из URL (переопределяем ID из тела, если он там был)
 	product.ID = id
 
-	// Валидация
 	if strings.TrimSpace(product.Name) == "" {
 		log.Error("product name is empty")
 		w.WriteHeader(http.StatusBadRequest)
@@ -344,7 +333,6 @@ func (h *Handler) UpdateProduct(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Обновляем продукт
 	if err := h.storage.UpdateProduct(r.Context(), product); err != nil {
 		if errors.Is(err, storage.ErrNotFound) {
 			log.Warn("product not found for update", slog.Int("id", id))
@@ -371,7 +359,6 @@ func (h *Handler) UpdateProduct(w http.ResponseWriter, r *http.Request) {
 		slog.String("name", product.Name),
 	)
 
-	// Возвращаем обновленный продукт
 	render.JSON(w, r, map[string]interface{}{
 		"status":  "Product updated successfully",
 		"id":      id,

@@ -24,29 +24,24 @@ type HTTPServer struct {
 }
 
 func MustLoad() *Config {
-	// Пробуем подгрузить .env, если он есть (в Docker его может не быть)
 	_ = godotenv.Load()
 
-	// Определяем окружение
 	env := os.Getenv("APP_ENV")
 	if env == "" {
 		env = "local"
 	}
 
-	// Путь до yaml
 	configPath := filepath.Join("config", fmt.Sprintf("%s.yaml", env))
 
 	if _, err := os.Stat(configPath); os.IsNotExist(err) {
 		panic(fmt.Sprintf("config file not found: %s", configPath))
 	}
 
-	// Загружаем конфиг
 	var cfg Config
 	if err := cleanenv.ReadConfig(configPath, &cfg); err != nil {
 		panic("cannot read config: " + err.Error())
 	}
 
-	// Проверяем DATABASE_URL (берем из окружения)
 	if cfg.DatabaseURL = os.Getenv("DATABASE_URL"); cfg.DatabaseURL == "" {
 		panic("DATABASE_URL not set in environment")
 	}

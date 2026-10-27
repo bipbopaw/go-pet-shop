@@ -16,50 +16,39 @@ import (
 	mock "github.com/stretchr/testify/mock"
 )
 
-// withURLParam добавляет URL параметр в контекст запроса
-// имитируя, что обычно делает роутер при матчинге маршрута
 func withURLParam(r *http.Request, key, value string) *http.Request {
 	rctx := chi.NewRouteContext()
 	rctx.URLParams.Add(key, value)
 	return r.WithContext(context.WithValue(r.Context(), chi.RouteCtxKey, rctx))
 }
 
-// Get Product - Ready
 func TestGetAllProducts_Success(t *testing.T) {
-	// Мокаем storage — он вернёт один продукт.
 	m := NewMockProducts(t)
 	m.On("GetAllProducts", context.Background(), 20, 0).Return([]models.Product{
 		{ID: 1, Name: "Dog Food"},
 	}, nil)
 
-	// Создаем HTTP-запрос GET /products
 	req := httptest.NewRequest(http.MethodGet, "/products", nil)
 	w := httptest.NewRecorder()
 
-	// Создаем хендлер с мок-хранилищем
 	handler := New(slog.Default(), m)
 
-	// Вызываем метод GetAllProducts, который является http.HandlerFunc
 	handler.GetAllProducts(w, req)
 
-	// Проверяем HTTP-код
 	if w.Code != http.StatusOK {
 		t.Fatalf("expected status 200, got %d", w.Code)
 	}
 }
 func TestGetAllProducts_Error(t *testing.T) {
-	// Мокаем storage — он будет возвращать ошибку
 	m := NewMockProducts(t)
 	m.On("GetAllProducts", context.Background(), 20, 0).Return(nil, errors.New("DB error"))
 
-	// Создаем запрос
 	req := httptest.NewRequest(http.MethodGet, "/products", nil)
 	w := httptest.NewRecorder()
 
 	handler := New(slog.Default(), m)
 	handler.GetAllProducts(w, req)
 
-	// Ожидаем HTTP 500
 	if w.Code != http.StatusInternalServerError {
 		t.Fatalf("expected 500, got %d", w.Code)
 	}
@@ -149,10 +138,6 @@ func TestGetProductByID_StorageError(t *testing.T) {
 	}
 }
 
-// =======================
-// Create Product
-// =======================
-
 func TestCreateProduct_Success(t *testing.T) {
 	m := NewMockProducts(t)
 	m.On("CreateProduct", context.Background(), models.Product{Name: "Cat Food", Price: 10.5, Stock: 5}).Return(42, nil)
@@ -213,10 +198,6 @@ func TestCreateProduct_Fail(t *testing.T) {
 	}
 }
 
-// =======================
-// Update Product
-// =======================
-
 func TestUpdateProduct_Success(t *testing.T) {
 	m := NewMockProducts(t)
 	m.On("UpdateProduct", mock.Anything, models.Product{ID: 1, Name: "Cat Food", Price: 10.5, Stock: 5}).
@@ -268,10 +249,6 @@ func TestUpdateProduct_Fail(t *testing.T) {
 		t.Fatalf("expected status 500, got %d, body: %s", w.Code, w.Body.String())
 	}
 }
-
-// =======================
-// Delete Product
-// =======================
 
 func TestDeleteProduct_Success(t *testing.T) {
 	m := NewMockProducts(t)
