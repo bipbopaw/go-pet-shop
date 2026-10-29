@@ -10,6 +10,33 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
+func (s *Storage) GetPopularProducts(ctx context.Context) ([]models.PopularProduct, error) {
+	const fn = "storage.postgres.product.GetPopularProducts"
+	rows, err := s.db.Query(ctx,
+		`SELECT p.id, p.name, p.price, p.stock, SUM(oi.quantity)::int AS total_sold
+		 FROM products p
+		 JOIN order_items oi ON oi.product_id = p.id
+		 GROUP BY p.id, p.name, p.price, p.stock
+		 ORDER BY total_sold DESC, p.id`,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", fn, err)
+	}
+	defer rows.Close()
+	products := make([]models.PopularProduct, 0)
+	for rows.Next() {
+		var product models.PopularProduct
+		if err := rows.Scan(&product.ID, &product.Name, &product.Price, &product.Stock, &product.TotalSold); err != nil {
+			return nil, fmt.Errorf("%s: scan row: %w", fn, err)
+		}
+		products = append(products, product)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("%s: iterate rows: %w", fn, err)
+	}
+	return products, nil
+}
+
 func (s *Storage) GetAllProducts(ctx context.Context, limit, offset int) ([]models.Product, error) {
 	const fn = "storage.postgres.product.GetAllProducts"
 

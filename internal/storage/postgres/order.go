@@ -173,6 +173,40 @@ func (s *Storage) GetOrdersByUserEmail(ctx context.Context, email string) ([]mod
 	return orders, nil
 }
 
+func (s *Storage) GetUserOrderHistory(ctx context.Context, email string) ([]models.OrderDetail, error) {
+	const fn = "storage.postgres.order.GetUserOrderHistory"
+	rows, err := s.db.Query(ctx,
+		`SELECT o.id, o.user_id, o.total_price, o.created_at,
+		        oi.id, p.id, p.name, p.price, oi.quantity,
+	        t.id, t.amount, t.status, t.created_at
+		 FROM orders o
+		 JOIN users u ON u.id = o.user_id
+		 JOIN order_items oi ON oi.order_id = o.id
+		 JOIN products p ON p.id = oi.product_id
+		 JOIN transactions t ON t.order_id = o.id
+		 WHERE u.email = $1
+		 ORDER BY o.created_at DESC, o.id DESC, oi.id, t.created_at DESC`, email,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", fn, err)
+	}
+	defer rows.Close()
+	history := make([]models.OrderDetail, 0)
+	for rows.Next() {
+		var detail models.OrderDetail
+		if err := rows.Scan(&detail.OrderID, &detail.UserID, &detail.TotalPrice, &detail.CreatedAt,
+			&detail.ItemID, &detail.ProductID, &detail.ProductName, &detail.UnitPrice, &detail.Quantity,
+			&detail.TransactionID, &detail.TransactionAmount, &detail.TransactionStatus, &detail.TransactionCreatedAt); err != nil {
+			return nil, fmt.Errorf("%s: scan row: %w", fn, err)
+		}
+		history = append(history, detail)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("%s: iterate rows: %w", fn, err)
+	}
+	return history, nil
+}
+
 func (s *Storage) GetOrderItemsByOrderID(ctx context.Context, orderID int) ([]models.OrderItem, error) {
 	const fn = "storage.postgres.order.GetOrderItemsByOrderID"
 	rows, err := s.db.Query(ctx,

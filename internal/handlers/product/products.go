@@ -25,6 +25,26 @@ type Products interface {
 	UpdateProduct(ctx context.Context, product models.Product) error
 }
 
+func (h *Handler) GetPopularProducts(w http.ResponseWriter, r *http.Request) {
+	const fn = "handlers.products.GetPopularProducts"
+	log := h.log.With(slog.String("fn", fn), slog.String("request_id", middleware.GetReqID(r.Context())))
+	popularStorage, ok := h.storage.(interface {
+		GetPopularProducts(context.Context) ([]models.PopularProduct, error)
+	})
+	if !ok {
+		log.Error("popular products are not supported by storage")
+		writeError(w, r, http.StatusInternalServerError, "Internal server error", "Failed to retrieve popular products")
+		return
+	}
+	products, err := popularStorage.GetPopularProducts(r.Context())
+	if err != nil {
+		log.Error("failed to get popular products", slog.Any("error", err))
+		writeError(w, r, http.StatusInternalServerError, "Internal server error", "Failed to retrieve popular products")
+		return
+	}
+	render.JSON(w, r, products)
+}
+
 const (
 	defaultPageLimit = 20
 	maxPageLimit     = 100

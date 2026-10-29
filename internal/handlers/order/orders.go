@@ -153,6 +153,33 @@ func (h *Handler) GetOrdersByUserEmail(w http.ResponseWriter, r *http.Request) {
 	render.JSON(w, r, orders)
 }
 
+func (h *Handler) GetUserOrderHistory(w http.ResponseWriter, r *http.Request) {
+	email := strings.TrimSpace(chi.URLParam(r, "email"))
+	address, err := mail.ParseAddress(email)
+	if err != nil || address.Address != email {
+		render.Status(r, http.StatusBadRequest)
+		render.JSON(w, r, map[string]string{"message": "A valid email is required"})
+		return
+	}
+	historyStorage, ok := h.storage.(interface {
+		GetUserOrderHistory(context.Context, string) ([]models.OrderDetail, error)
+	})
+	if !ok {
+		h.log.Error("order history is not supported by storage")
+		render.Status(r, http.StatusInternalServerError)
+		render.JSON(w, r, map[string]string{"message": "Failed to retrieve order history"})
+		return
+	}
+	history, err := historyStorage.GetUserOrderHistory(r.Context(), email)
+	if err != nil {
+		h.log.Error("failed to get user order history", slog.Any("error", err))
+		render.Status(r, http.StatusInternalServerError)
+		render.JSON(w, r, map[string]string{"message": "Failed to retrieve order history"})
+		return
+	}
+	render.JSON(w, r, history)
+}
+
 func parseID(w http.ResponseWriter, r *http.Request) (int, bool) {
 	id, err := strconv.Atoi(chi.URLParam(r, "id"))
 	if err != nil || id <= 0 {
