@@ -48,7 +48,7 @@ migrations/                 SQL-миграции
 Нужны Go, Task и PostgreSQL. Создайте `.env` со строкой подключения, например:
 
 ```dotenv
-DATABASE_URL=postgres://user:password@localhost:5432/petshop?sslmode=disable
+DATABASE_URL=postgres://user:password@postgres:5432/petshop?sslmode=disable
 ```
 
 Примените миграции и запустите сервер:

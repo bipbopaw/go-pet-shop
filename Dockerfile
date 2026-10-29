@@ -27,5 +27,5 @@ USER 10001:10001
 
 EXPOSE 8080
 
-CMD ["sh", "-c", "./migrator --migrations-path ./migrations && exec ./go-pet-shop"]
-
+# CMD ["sh", "-c", "./migrator --migrations-path ./migrations && exec ./go-pet-shop"]
+CMD ["./go-pet-shop"]

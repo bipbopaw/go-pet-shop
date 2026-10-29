@@ -3,12 +3,10 @@
 version: "3"
 
 tasks:
-  generate:
-    aliases: [migrate]
-    desc: "Generate migrations for the database"
-    dotenv: [".env"]
+  migrate:
+    desc: "Apply migrations using the migrator in the running app container"
     cmds:
-      - go run cmd/migrator/main.go --migrations-path "./migrations"
+      - docker compose exec app ./migrator --migrations-path ./migrations
 
   test:
     desc: "Run tests with the race detector and coverage"
